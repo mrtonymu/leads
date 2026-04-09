@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useCRMStore } from '../store';
 import { LeadStatus } from '../types';
 import { MapPin, Search, UserCircle, Tag } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
+import { getCalendarDaysAgoText } from '../types';
 import { LeadDetail } from './LeadDetail';
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
@@ -108,7 +107,7 @@ export function LeadList() {
                         </span>
                       )}
                       <span className="text-[11px] text-slate-400">
-                        {formatDistanceToNow(new Date(lead.createdAt), { addSuffix: true, locale: zhCN })}
+                        {getCalendarDaysAgoText(lead.createdAt)}
                       </span>
                     </div>
                   </div>

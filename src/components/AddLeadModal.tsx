@@ -7,22 +7,26 @@ interface AddLeadModalProps {
 }
 
 export function AddLeadModal({ onClose }: AddLeadModalProps) {
-  const { events, addLead } = useCRMStore();
+  const { events, projects, addLead } = useCRMStore();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [eventId, setEventId] = useState(events.length > 0 ? events[0].id : '');
+  const [projectId, setProjectId] = useState(projects.length > 0 ? projects[0].id : '');
   const [projectInterest, setProjectInterest] = useState('');
   const [notes, setNotes] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !phone.trim()) return;
 
-    addLead({
+    const selectedProject = projects.find((p) => p.id === projectId);
+
+    await addLead({
       name,
       phone,
       eventId: eventId || null,
-      projectInterest,
+      projectId: projectId || null,
+      projectInterest: selectedProject?.name || projectInterest,
       notes,
       status: 'new',
     });
@@ -39,7 +43,7 @@ export function AddLeadModal({ onClose }: AddLeadModalProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4.5">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1.5">客户姓名 *</label>
@@ -83,13 +87,28 @@ export function AddLeadModal({ onClose }: AddLeadModalProps) {
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 mb-1.5">意向项目</label>
-            <input
-              type="text"
-              value={projectInterest}
-              onChange={(e) => setProjectInterest(e.target.value)}
-              placeholder="例如: KLCC 3房 / 投资"
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200/80 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm"
-            />
+            {projects.length > 0 ? (
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200/80 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm appearance-none"
+              >
+                <option value="">-- 不指定项目 --</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={projectInterest}
+                onChange={(e) => setProjectInterest(e.target.value)}
+                placeholder="例如: KLCC 3房 / 投资"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200/80 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 focus:bg-white outline-none transition-all text-sm"
+              />
+            )}
           </div>
 
           <div>
@@ -116,4 +135,3 @@ export function AddLeadModal({ onClose }: AddLeadModalProps) {
     </div>
   );
 }
-
