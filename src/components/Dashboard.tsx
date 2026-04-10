@@ -7,6 +7,30 @@ import { isAIConfigured, generateDailySummary, suggestFollowUpTopics, type Follo
 
 type FollowUpDay = 'day0' | 'day1' | 'day3' | 'day7';
 
+const AI_CACHE_KEY = 'dignity-crm-ai-daily-cache';
+
+interface AIDailyCache {
+  date: string;
+  summary: string;
+  suggestions: FollowUpSuggestion[];
+}
+
+function getCachedAI(): AIDailyCache | null {
+  try {
+    const raw = localStorage.getItem(AI_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as AIDailyCache;
+    const today = new Date().toISOString().split('T')[0];
+    if (cache.date === today) return cache;
+    return null; // expired (different day)
+  } catch { return null; }
+}
+
+function setCachedAI(summary: string, suggestions: FollowUpSuggestion[]) {
+  const today = new Date().toISOString().split('T')[0];
+  localStorage.setItem(AI_CACHE_KEY, JSON.stringify({ date: today, summary, suggestions }));
+}
+
 const DAY_ORDER: FollowUpDay[] = ['day0', 'day1', 'day3', 'day7'];
 
 const DAY_ACTIONS: Record<string, { whatsapp: string; call: boolean }> = {
@@ -44,9 +68,20 @@ export function Dashboard() {
   const totalTasks = Object.values(todayTasks).reduce((sum, arr) => sum + arr.length, 0);
   const allTodayLeads = Object.values(todayTasks).flat();
 
-  // Auto-load AI summary + follow-up suggestions
-  const loadAI = async () => {
+  // Load AI summary: use today's cache if available, otherwise generate
+  const loadAI = async (forceRefresh = false) => {
     if (!isAIConfigured() || allTodayLeads.length === 0) return;
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = getCachedAI();
+      if (cached) {
+        setAiSummary(cached.summary);
+        setFollowUpSuggestions(cached.suggestions);
+        return;
+      }
+    }
+
     setAiSummaryLoading(true);
     try {
       const [summary, suggestions] = await Promise.all([
@@ -55,6 +90,7 @@ export function Dashboard() {
       ]);
       setAiSummary(summary);
       setFollowUpSuggestions(suggestions);
+      setCachedAI(summary, suggestions);
     } catch (err) {
       console.error('AI Dashboard error:', err);
     } finally {
@@ -133,7 +169,7 @@ export function Dashboard() {
             </h4>
             <button
               type="button"
-              onClick={loadAI}
+              onClick={() => loadAI(true)}
               disabled={aiSummaryLoading}
               className="p-1.5 text-purple-400 hover:text-purple-600 hover:bg-purple-100 rounded-lg transition-colors disabled:opacity-50"
             >
