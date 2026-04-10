@@ -338,7 +338,12 @@ export async function analyzeBrochure(file: File): Promise<string[]> {
   if (!isAIConfigured()) throw new Error('Gemini API key not configured');
 
   const bytes = await file.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  const uint8 = new Uint8Array(bytes);
+  let binary = '';
+  for (let i = 0; i < uint8.length; i++) {
+    binary += String.fromCharCode(uint8[i]);
+  }
+  const base64 = btoa(binary);
 
   try {
     const response = await ai.models.generateContent({
