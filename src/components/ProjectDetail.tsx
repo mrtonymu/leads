@@ -358,7 +358,7 @@ export function ProjectDetail({ projectId, onBack }: Props) {
                     <span className="text-xs font-medium">{brochureProgress || 'AI 正在分析...'}</span>
                   </div>
                   <span className="text-xs text-slate-400">
-                    已用时 {formatElapsed(brochureElapsed)} · 预计约30秒
+                    已用时 {formatElapsed(brochureElapsed)}
                   </span>
                 </div>
               </div>
