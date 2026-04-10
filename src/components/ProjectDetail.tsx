@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useCRMStore } from '../store';
 import { ArrowLeft, Plus, Edit2, Save, Trash2, X, ImagePlus, Loader2, Sparkles, FileUp } from 'lucide-react';
 import { DayType, DAY_TYPE_LABELS, DAY_TYPE_COLORS } from '../types';
@@ -38,7 +38,24 @@ export function ProjectDetail({ projectId, onBack }: Props) {
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const [aiBrochureLoading, setAiBrochureLoading] = useState(false);
   const [brochureProgress, setBrochureProgress] = useState('');
+  const [brochureStep, setBrochureStep] = useState(0); // 0=idle, 1=preparing, 2=parsing PDF, 3=AI analyzing, 4=done
+  const [brochureStartTime, setBrochureStartTime] = useState<number | null>(null);
+  const [brochureElapsed, setBrochureElapsed] = useState(0);
   const [aiBrochureResults, setAiBrochureResults] = useState<string[]>([]);
+
+  // Elapsed time ticker
+  useEffect(() => {
+    if (!brochureStartTime) { setBrochureElapsed(0); return; }
+    const interval = setInterval(() => {
+      setBrochureElapsed(Math.floor((Date.now() - brochureStartTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [brochureStartTime]);
+
+  const formatElapsed = useCallback((s: number) => {
+    if (s < 60) return `${s}秒`;
+    return `${Math.floor(s / 60)}分${s % 60}秒`;
+  }, []);
 
   if (!project) return null;
 
@@ -109,27 +126,31 @@ export function ProjectDetail({ projectId, onBack }: Props) {
 
     setAiBrochureLoading(true);
     setAiBrochureResults([]);
+    setBrochureStartTime(Date.now());
+    setBrochureStep(1);
     setBrochureProgress('准备中...');
     try {
       const allPoints: string[] = [];
 
       for (const file of Array.from(files) as File[]) {
         if (file.type === 'application/pdf') {
-          // PDF: convert all pages to images, then analyze in one batch call
+          setBrochureStep(2);
           setBrochureProgress('正在解析 PDF...');
           const images = await pdfToImages(file, 20);
-          setBrochureProgress(`已解析 ${images.length} 页，AI 正在分析...`);
+          setBrochureStep(3);
+          setBrochureProgress(`已解析 ${images.length} 页，AI 正在分析卖点...`);
           const points = await analyzeBrochureBatch(images);
           allPoints.push(...points);
         } else {
-          // Image: analyze directly
+          setBrochureStep(3);
           setBrochureProgress('AI 正在分析图片...');
           const points = await analyzeBrochure(file);
           allPoints.push(...points);
         }
       }
 
-      // Deduplicate similar points
+      setBrochureStep(4);
+      setBrochureProgress('分析完成！');
       const unique = [...new Set(allPoints)];
       setAiBrochureResults(unique);
     } catch (err) {
@@ -138,6 +159,8 @@ export function ProjectDetail({ projectId, onBack }: Props) {
     } finally {
       setAiBrochureLoading(false);
       setBrochureProgress('');
+      setBrochureStartTime(null);
+      setBrochureStep(0);
       if (brochureInputRef.current) brochureInputRef.current.value = '';
     }
   };
@@ -293,9 +316,51 @@ export function ProjectDetail({ projectId, onBack }: Props) {
             )}
 
             {aiBrochureLoading && (
-              <div className="flex items-center justify-center gap-2 py-4 text-purple-600">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="font-semibold text-sm">{brochureProgress || 'AI 正在分析...'}</span>
+              <div className="py-4 px-1 space-y-3">
+                {/* Step indicators */}
+                <div className="flex items-center gap-2 text-sm">
+                  {[
+                    { step: 1, label: '准备' },
+                    { step: 2, label: '解析' },
+                    { step: 3, label: 'AI 分析' },
+                  ].map(({ step, label }) => (
+                    <div key={step} className="flex items-center gap-1.5">
+                      <div className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+                        brochureStep > step ? 'bg-green-500' :
+                        brochureStep === step ? 'bg-purple-500 animate-pulse' :
+                        'bg-slate-200'
+                      }`} />
+                      <span className={`text-xs font-medium ${
+                        brochureStep >= step ? 'text-purple-700' : 'text-slate-400'
+                      }`}>{label}</span>
+                      {step < 3 && <span className="text-slate-300 mx-0.5">›</span>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-purple-600 rounded-full transition-all duration-1000 ease-out"
+                    style={{
+                      width: brochureStep === 1 ? '10%' :
+                             brochureStep === 2 ? '35%' :
+                             brochureStep === 3 ? `${Math.min(35 + brochureElapsed * 2, 90)}%` :
+                             '100%'
+                    }}
+                  />
+                </div>
+
+                {/* Status text + elapsed time */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-purple-600">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-xs font-medium">{brochureProgress || 'AI 正在分析...'}</span>
+                  </div>
+                  <span className="text-xs text-slate-400">
+                    已用时 {formatElapsed(brochureElapsed)} · 预计约30秒
+                  </span>
+                </div>
               </div>
             )}
 
