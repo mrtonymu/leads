@@ -1,11 +1,9 @@
-import { GoogleGenAI } from '@google/genai';
-import type { Lead, TimelineEntry, Project, Template, DayType } from '../types';
+import type { Lead, TimelineEntry, Project, DayType } from '../types';
 import { getCalendarDaysAgoText, DAY_TYPE_LABELS } from '../types';
 
-// ─── Gemini Client ───
+// ─── Claude Client ───
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
 
 export const isAIConfigured = () => Boolean(apiKey);
 
@@ -60,24 +58,85 @@ OUTPUT RULES:
 - FORBIDDEN: "尊敬的客户", "Dear customer", "Thank you for your inquiry" type phrases.
 - Tone should be as natural as chatting with a friend.`;
 
-// ─── Generic Caller ───
+// ─── Generic Caller (using fetch for browser compatibility) ───
 
-async function callGemini(userPrompt: string): Promise<string> {
-  if (!isAIConfigured()) throw new Error('Gemini API key not configured');
+async function callClaude(userPrompt: string): Promise<string> {
+  if (!isAIConfigured()) throw new Error('Claude API key not configured');
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: userPrompt,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.8,
-        maxOutputTokens: 1024,
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
     });
-    return response.text?.trim() || '';
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = (err as Record<string, Record<string, string>>)?.error?.message || response.statusText;
+      if (response.status === 429) throw new Error('AI 配额已用完，请稍后再试');
+      throw new Error(`AI 请求失败: ${msg}`);
+    }
+
+    const data = await response.json() as { content: Array<{ type: string; text: string }> };
+    const text = data.content?.find((c) => c.type === 'text')?.text || '';
+    return text.trim();
   } catch (err) {
-    console.error('Gemini API error:', err);
+    if (err instanceof Error && err.message.startsWith('AI')) throw err;
+    console.error('Claude API error:', err);
+    throw new Error('AI 请求失败，请稍后再试');
+  }
+}
+
+// ─── Multimodal Caller (for images) ───
+
+async function callClaudeWithImage(userPrompt: string, imageBase64: string, mimeType: string): Promise<string> {
+  if (!isAIConfigured()) throw new Error('Claude API key not configured');
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+            { type: 'text', text: userPrompt },
+          ],
+        }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = (err as Record<string, Record<string, string>>)?.error?.message || response.statusText;
+      throw new Error(`AI 请求失败: ${msg}`);
+    }
+
+    const data = await response.json() as { content: Array<{ type: string; text: string }> };
+    const text = data.content?.find((c) => c.type === 'text')?.text || '';
+    return text.trim();
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('AI')) throw err;
+    console.error('Claude API error:', err);
     throw new Error('AI 请求失败，请稍后再试');
   }
 }
@@ -146,7 +205,7 @@ ${buildTimelineContext(timeline)}
   {"style": "直接型", "message": "回复内容"}
 ]`;
 
-  const result = await callGemini(prompt);
+  const result = await callClaude(prompt);
   try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);
@@ -183,7 +242,7 @@ ${buildTimelineContext(timeline)}
 - 必须用客户的语言（根据名字和之前互动判断）
 - 直接返回消息内容，不要有任何解释或前缀`;
 
-  return callGemini(prompt);
+  return callClaude(prompt);
 }
 
 // ─── Feature 3: AI Daily Summary ───
@@ -211,7 +270,7 @@ ${leadsInfo}
 - 不要啰嗦，像同事给你的简报
 - 直接返回总结内容，不要有任何前缀`;
 
-  return callGemini(prompt);
+  return callClaude(prompt);
 }
 
 // ─── Feature 4: AI Intent Analysis ───
@@ -244,7 +303,7 @@ ${leadsInfo}
   {"leadId": "客户ID", "intent": "hot/warm/cold", "reason": "简短原因"}
 ]`;
 
-  const result = await callGemini(prompt);
+  const result = await callClaude(prompt);
   try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);
@@ -289,7 +348,7 @@ ${leadsInfo}
   {"leadId": "客户ID", "suggestion": "跟进话题建议"}
 ]`;
 
-  const result = await callGemini(prompt);
+  const result = await callClaude(prompt);
   try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);
@@ -322,7 +381,7 @@ ${buildTimelineContext(timeline)}
 请严格按以下 JSON 格式返回，不要有任何多余文字:
 ["标签1", "标签2", "标签3"]`;
 
-  const result = await callGemini(prompt);
+  const result = await callClaude(prompt);
   try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     const tags = JSON.parse(cleaned) as string[];
@@ -335,26 +394,13 @@ ${buildTimelineContext(timeline)}
 // ─── Feature 7: AI Brochure Analysis ───
 
 export async function analyzeBrochure(file: File): Promise<string[]> {
-  if (!isAIConfigured()) throw new Error('Gemini API key not configured');
+  if (!isAIConfigured()) throw new Error('Claude API key not configured');
 
   const bytes = await file.arrayBuffer();
   const base64 = btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  const mimeType = file.type || 'image/jpeg';
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                mimeType: file.type || 'image/jpeg',
-                data: base64,
-              },
-            },
-            {
-              text: `分析这个房地产项目的 Sales Kit / Brochure，提取卖点。
+  const prompt = `分析这个房地产项目的 Sales Kit / Brochure，提取卖点。
 
 要求:
 - 用利他思维重新包装每个卖点（不讲产品多好，讲能帮客户解决什么）
@@ -363,23 +409,13 @@ export async function analyzeBrochure(file: File): Promise<string[]> {
 - 用中文
 
 请严格按以下 JSON 格式返回，不要有任何多余文字:
-["卖点1", "卖点2", "卖点3"]`,
-            },
-          ],
-        },
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        temperature: 0.5,
-        maxOutputTokens: 1024,
-      },
-    });
+["卖点1", "卖点2", "卖点3"]`;
 
-    const result = response.text?.trim() || '[]';
+  const result = await callClaudeWithImage(prompt, base64, mimeType);
+  try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);
-  } catch (err) {
-    console.error('Brochure analysis error:', err);
-    throw new Error('AI 分析失败，请稍后再试');
+  } catch {
+    return [result];
   }
 }
