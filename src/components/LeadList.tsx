@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useCRMStore } from '../store';
 import { LeadStatus } from '../types';
-import { MapPin, Search, UserCircle, Tag } from 'lucide-react';
+import { MapPin, Search, UserCircle, Tag, Flame, Snowflake, ThermometerSun } from 'lucide-react';
 import { getCalendarDaysAgoText } from '../types';
 import { LeadDetail } from './LeadDetail';
+import { isAIConfigured, analyzeIntent, type IntentResult } from '../lib/ai';
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new: '未联系',
@@ -21,11 +22,28 @@ const STATUS_COLORS: Record<LeadStatus, string> = {
   dead: 'bg-slate-50 text-slate-600 border-slate-200/60',
 };
 
+const INTENT_ICONS = {
+  hot: { icon: Flame, color: 'text-red-500', label: 'Hot' },
+  warm: { icon: ThermometerSun, color: 'text-amber-500', label: 'Warm' },
+  cold: { icon: Snowflake, color: 'text-blue-400', label: 'Cold' },
+};
+
 export function LeadList() {
-  const { leads, events } = useCRMStore();
+  const { leads, events, timeline } = useCRMStore();
   const [filterEvent, setFilterEvent] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [intents, setIntents] = useState<IntentResult[]>([]);
+  const aiLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!aiLoadedRef.current && isAIConfigured() && leads.length > 0) {
+      aiLoadedRef.current = true;
+      analyzeIntent(leads, timeline).then(setIntents).catch(console.error);
+    }
+  }, [leads.length]);
+
+  const getIntent = (leadId: string) => intents.find((i) => i.leadId === leadId);
 
   const filteredLeads = leads.filter((lead) => {
     const matchesEvent = filterEvent === 'all' || lead.eventId === filterEvent;
@@ -112,8 +130,21 @@ export function LeadList() {
                     </div>
                   </div>
                   
-                  <div className={`text-[11px] font-bold px-3 py-1 rounded-full border ${STATUS_COLORS[lead.status]}`}>
-                    {STATUS_LABELS[lead.status]}
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const intent = getIntent(lead.id);
+                      if (!intent) return null;
+                      const cfg = INTENT_ICONS[intent.intent];
+                      const Icon = cfg.icon;
+                      return (
+                        <span className={`${cfg.color}`} title={intent.reason}>
+                          <Icon className="w-4 h-4" />
+                        </span>
+                      );
+                    })()}
+                    <div className={`text-[11px] font-bold px-3 py-1 rounded-full border ${STATUS_COLORS[lead.status]}`}>
+                      {STATUS_LABELS[lead.status]}
+                    </div>
                   </div>
                 </div>
 

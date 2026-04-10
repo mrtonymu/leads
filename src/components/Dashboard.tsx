@@ -1,7 +1,9 @@
+import { useState, useEffect, useRef } from 'react';
 import { useCRMStore } from '../store';
-import { Users, CalendarCheck, PhoneOutgoing, CheckCircle, MessageCircle, Phone, Check } from 'lucide-react';
+import { Users, CalendarCheck, PhoneOutgoing, CheckCircle, MessageCircle, Phone, Check, Sparkles, Loader2, RefreshCw } from 'lucide-react';
 import { getLeadDayType, DAY_TYPE_LABELS, DAY_TYPE_COLORS } from '../types';
 import type { Lead } from '../types';
+import { isAIConfigured, generateDailySummary, suggestFollowUpTopics, type FollowUpSuggestion } from '../lib/ai';
 
 type FollowUpDay = 'day0' | 'day1' | 'day3' | 'day7';
 
@@ -15,7 +17,13 @@ const DAY_ACTIONS: Record<string, { whatsapp: string; call: boolean }> = {
 };
 
 export function Dashboard() {
-  const { leads, events, projects, templates, markFollowUpDone, addTimelineEntry, updateLeadStatus } = useCRMStore();
+  const { leads, events, projects, timeline, templates, markFollowUpDone, addTimelineEntry, updateLeadStatus } = useCRMStore();
+
+  // AI states
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [followUpSuggestions, setFollowUpSuggestions] = useState<FollowUpSuggestion[]>([]);
+  const aiLoadedRef = useRef(false);
 
   const totalLeads = leads.length;
   const newLeads = leads.filter((l) => l.status === 'new').length;
@@ -34,6 +42,35 @@ export function Dashboard() {
   });
 
   const totalTasks = Object.values(todayTasks).reduce((sum, arr) => sum + arr.length, 0);
+  const allTodayLeads = Object.values(todayTasks).flat();
+
+  // Auto-load AI summary + follow-up suggestions
+  const loadAI = async () => {
+    if (!isAIConfigured() || allTodayLeads.length === 0) return;
+    setAiSummaryLoading(true);
+    try {
+      const [summary, suggestions] = await Promise.all([
+        generateDailySummary(allTodayLeads, timeline, projects),
+        suggestFollowUpTopics(allTodayLeads, timeline, projects),
+      ]);
+      setAiSummary(summary);
+      setFollowUpSuggestions(suggestions);
+    } catch (err) {
+      console.error('AI Dashboard error:', err);
+    } finally {
+      setAiSummaryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!aiLoadedRef.current && allTodayLeads.length > 0 && isAIConfigured()) {
+      aiLoadedRef.current = true;
+      loadAI();
+    }
+  }, [allTodayLeads.length]);
+
+  const getSuggestionForLead = (leadId: string) =>
+    followUpSuggestions.find((s) => s.leadId === leadId)?.suggestion;
 
   const handleWhatsApp = (lead: Lead, dayType: 'day0' | 'day1' | 'day3' | 'day7') => {
     // Find template for this lead's project + day
@@ -87,6 +124,32 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* AI Daily Summary */}
+      {isAIConfigured() && (aiSummary || aiSummaryLoading) && (
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 p-4 rounded-2xl border border-purple-100/80">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-bold text-purple-900 flex items-center gap-1.5 text-sm">
+              <Sparkles className="w-4 h-4 text-purple-500" /> AI 今日总结
+            </h4>
+            <button
+              type="button"
+              onClick={loadAI}
+              disabled={aiSummaryLoading}
+              className="p-1.5 text-purple-400 hover:text-purple-600 hover:bg-purple-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {aiSummaryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          {aiSummaryLoading ? (
+            <p className="text-sm text-purple-600 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> AI 正在分析...
+            </p>
+          ) : (
+            <p className="text-sm text-purple-900/80 leading-relaxed whitespace-pre-wrap">{aiSummary}</p>
+          )}
+        </div>
+      )}
+
       {/* Today's Tasks by Day */}
       {totalTasks === 0 ? (
         <div className="text-center py-16 text-slate-400 bg-white rounded-3xl border border-dashed border-slate-200">
@@ -124,6 +187,12 @@ export function Dashboard() {
                             {event && <span className="ml-2 text-slate-400">· {event.name}</span>}
                           </p>
                           <p className="text-[11px] text-slate-400 mt-1">{actions.whatsapp}</p>
+                          {getSuggestionForLead(lead.id) && (
+                            <p className="text-[11px] text-purple-600 mt-1 flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 shrink-0" />
+                              {getSuggestionForLead(lead.id)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex gap-1.5 shrink-0">
                           <button

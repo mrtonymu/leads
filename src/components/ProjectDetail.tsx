@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { useCRMStore } from '../store';
-import { ArrowLeft, Plus, Edit2, Save, Trash2, X, ImagePlus, Loader2 } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Save, Trash2, X, ImagePlus, Loader2, Sparkles, FileUp } from 'lucide-react';
 import { DayType, DAY_TYPE_LABELS, DAY_TYPE_COLORS } from '../types';
 import { uploadProjectImage } from '../lib/db';
+import { isAIConfigured, analyzeBrochure } from '../lib/ai';
 
 const DAY_TYPES: DayType[] = ['day0', 'day1', 'day3', 'day7'];
 
@@ -31,6 +32,11 @@ export function ProjectDetail({ projectId, onBack }: Props) {
   // Image upload
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  // AI Brochure
+  const brochureInputRef = useRef<HTMLInputElement>(null);
+  const [aiBrochureLoading, setAiBrochureLoading] = useState(false);
+  const [aiBrochureResults, setAiBrochureResults] = useState<string[]>([]);
 
   if (!project) return null;
 
@@ -93,6 +99,29 @@ export function ProjectDetail({ projectId, onBack }: Props) {
   const handleRemoveImage = async (imageUrl: string) => {
     const newImages = project.images.filter((img) => img !== imageUrl);
     await updateProject(projectId, { images: newImages });
+  };
+
+  const handleBrochureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAiBrochureLoading(true);
+    setAiBrochureResults([]);
+    try {
+      const points = await analyzeBrochure(file);
+      setAiBrochureResults(points);
+    } catch (err) {
+      console.error(err);
+      alert('AI 分析失败，请稍后再试');
+    } finally {
+      setAiBrochureLoading(false);
+      if (brochureInputRef.current) brochureInputRef.current.value = '';
+    }
+  };
+
+  const handleAcceptBrochureResults = async () => {
+    const merged = [...project.sellingPoints, ...aiBrochureResults];
+    await updateProject(projectId, { sellingPoints: merged });
+    setAiBrochureResults([]);
   };
 
   return (
@@ -208,6 +237,73 @@ export function ProjectDetail({ projectId, onBack }: Props) {
             <p className="text-sm text-slate-400 text-center py-4">暂无卖点，点击编辑添加</p>
           )}
         </div>
+
+        {/* AI Brochure Analysis */}
+        {isAIConfigured() && (
+          <div className="bg-white p-5 rounded-3xl shadow-sm border border-purple-100/80 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2 text-lg">
+                <Sparkles className="w-5 h-5 text-purple-500" /> AI 分析卖点
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500">上传 Sales Kit / Brochure，AI 自动提取卖点</p>
+
+            <input
+              ref={brochureInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              onChange={handleBrochureUpload}
+              className="hidden"
+              aria-label="选择 Brochure 文件"
+            />
+
+            {aiBrochureResults.length === 0 && !aiBrochureLoading && (
+              <button
+                type="button"
+                onClick={() => brochureInputRef.current?.click()}
+                className="w-full py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700 active:scale-95 transition-all shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm"
+              >
+                <FileUp className="w-4 h-4" /> 上传并分析
+              </button>
+            )}
+
+            {aiBrochureLoading && (
+              <div className="flex items-center justify-center gap-2 py-4 text-purple-600">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="font-semibold text-sm">AI 正在分析...</span>
+              </div>
+            )}
+
+            {aiBrochureResults.length > 0 && (
+              <div className="space-y-3">
+                <ul className="space-y-2">
+                  {aiBrochureResults.map((point, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-purple-900 bg-purple-50 p-2.5 rounded-xl">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400 mt-0.5 shrink-0" />
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAiBrochureResults([])}
+                    className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-200 active:scale-95 transition-all"
+                  >
+                    忽略
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAcceptBrochureResults}
+                    className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 active:scale-95 transition-all shadow-md shadow-purple-500/20"
+                  >
+                    采用这些卖点
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Templates by Day */}
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100/80 overflow-hidden">

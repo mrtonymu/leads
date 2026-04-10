@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useCRMStore } from '../store';
 import { Lead, LeadStatus, DayType, DAY_TYPE_LABELS, DAY_TYPE_COLORS, getLeadDayType } from '../types';
-import { ArrowLeft, Phone, MessageCircle, Tag, Plus, Clock, FileText, CheckCircle2, Info, Check, Copy, Trash2 } from 'lucide-react';
+import { ArrowLeft, Phone, MessageCircle, Tag, Plus, Clock, FileText, CheckCircle2, Info, Check, Copy, Trash2, Sparkles, Loader2, Wand2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { isAIConfigured, generateReplySuggestions, generateMessage, suggestTags, type ReplySuggestion } from '../lib/ai';
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new: '未联系',
@@ -42,31 +43,35 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
   const [selectedDayType, setSelectedDayType] = useState<DayType>('day0');
   const [copiedImage, setCopiedImage] = useState(false);
 
+  // AI states
+  const [customerReply, setCustomerReply] = useState('');
+  const [replySuggestions, setReplySuggestions] = useState<ReplySuggestion[]>([]);
+  const [aiReplyLoading, setAiReplyLoading] = useState(false);
+  const [aiMessageLoading, setAiMessageLoading] = useState(false);
+  const [aiTagsLoading, setAiTagsLoading] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+
   // Calculate recommended day type
   const recommendedDay = lead ? getLeadDayType(lead.createdAt) : null;
 
   // Find matching template
   const getTemplate = (dayType: DayType) => {
     const projectId = lead?.projectId;
-    // Try project-specific first
     let template = projectId
       ? templates.find((t) => t.projectId === projectId && t.dayType === dayType)
       : null;
-    // Fallback to general
     if (!template) {
       template = templates.find((t) => t.projectId === null && t.dayType === dayType);
     }
     return template;
   };
 
-  // Set initial day type and message
   useEffect(() => {
     if (!lead) return;
     const day = recommendedDay && recommendedDay !== 'custom' ? recommendedDay : 'day0';
     setSelectedDayType(day);
   }, [leadId]);
 
-  // Update message when day type or lead changes
   useEffect(() => {
     if (!lead) return;
     const template = getTemplate(selectedDayType);
@@ -82,6 +87,9 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
   if (!lead) return null;
 
   const currentTemplate = getTemplate(selectedDayType);
+  const aiAvailable = isAIConfigured();
+
+  // ─── Handlers ───
 
   const handleWhatsApp = () => {
     if (!customMessage.trim()) return;
@@ -104,13 +112,10 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
     try {
       const response = await fetch(currentTemplate.imageUrl);
       const blob = await response.blob();
-      await navigator.clipboard.write([
-        new ClipboardItem({ [blob.type]: blob }),
-      ]);
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
       setCopiedImage(true);
       setTimeout(() => setCopiedImage(false), 2000);
     } catch {
-      // Fallback: open image in new tab
       window.open(currentTemplate.imageUrl, '_blank');
     }
   };
@@ -127,6 +132,58 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
       setCustomTag('');
       setShowTagMenu(false);
     }
+  };
+
+  // ─── AI Handlers ───
+
+  const handleAIReply = async () => {
+    if (!customerReply.trim()) return;
+    setAiReplyLoading(true);
+    setReplySuggestions([]);
+    try {
+      const suggestions = await generateReplySuggestions(customerReply, lead, leadTimeline, event, project);
+      setReplySuggestions(suggestions);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAiReplyLoading(false);
+    }
+  };
+
+  const handleSelectReply = (message: string) => {
+    setCustomMessage(message);
+    setReplySuggestions([]);
+    setCustomerReply('');
+  };
+
+  const handleAIGenerate = async () => {
+    setAiMessageLoading(true);
+    try {
+      const msg = await generateMessage(lead, selectedDayType, leadTimeline, event, project);
+      setCustomMessage(msg);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAiMessageLoading(false);
+    }
+  };
+
+  const handleAITags = async () => {
+    setAiTagsLoading(true);
+    setSuggestedTags([]);
+    try {
+      const tags = await suggestTags(lead, leadTimeline, event, project);
+      setSuggestedTags(tags);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAiTagsLoading(false);
+    }
+  };
+
+  const handleAcceptTag = (tag: string) => {
+    addLeadTag(lead.id, tag);
+    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   };
 
   return (
@@ -193,9 +250,52 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
           </div>
         </div>
 
-        {/* Recommended Template + WhatsApp */}
+        {/* AI Reply Suggestions */}
+        {aiAvailable && (
+          <div className="bg-white p-5 rounded-3xl shadow-sm border border-purple-100/80 space-y-3">
+            <h4 className="font-bold text-slate-900 flex items-center gap-2 text-sm">
+              <Sparkles className="w-4 h-4 text-purple-500" /> AI 回复建议
+            </h4>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customerReply}
+                onChange={(e) => setCustomerReply(e.target.value)}
+                placeholder="粘贴客户回复的内容..."
+                className="flex-1 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2.5 text-sm focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 outline-none transition-all"
+                onKeyDown={(e) => e.key === 'Enter' && handleAIReply()}
+              />
+              <button
+                type="button"
+                onClick={handleAIReply}
+                disabled={aiReplyLoading || !customerReply.trim()}
+                className="px-4 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {aiReplyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                AI
+              </button>
+            </div>
+
+            {replySuggestions.length > 0 && (
+              <div className="space-y-2">
+                {replySuggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSelectReply(s.message)}
+                    className="w-full text-left bg-purple-50/50 hover:bg-purple-50 border border-purple-100/80 rounded-xl p-3 transition-colors"
+                  >
+                    <span className="text-[10px] font-bold text-purple-600 block mb-1">{s.style}</span>
+                    <span className="text-sm text-slate-700 leading-relaxed">{s.message}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Template + WhatsApp */}
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100/80 space-y-4">
-          {/* Day selector + recommended badge */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <label className="text-[11px] font-semibold text-slate-500">选择模板</label>
@@ -229,14 +329,9 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
             </div>
           </div>
 
-          {/* Image preview + copy */}
           {currentTemplate?.imageUrl && (
             <div className="relative">
-              <img
-                src={currentTemplate.imageUrl}
-                alt="模板图片"
-                className="w-full rounded-xl border border-slate-100 object-cover max-h-48"
-              />
+              <img src={currentTemplate.imageUrl} alt="模板图片" className="w-full rounded-xl border border-slate-100 object-cover max-h-48" />
               <button
                 onClick={handleCopyImage}
                 className="absolute bottom-2 right-2 bg-white/90 backdrop-blur-sm text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-md hover:bg-white active:scale-95 transition-all border border-slate-200/80"
@@ -247,7 +342,6 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
             </div>
           )}
 
-          {/* Message textarea */}
           <div className="space-y-2.5">
             <textarea
               value={customMessage}
@@ -256,12 +350,25 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
               rows={5}
               className="w-full text-sm bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-3 outline-none focus:ring-4 focus:ring-green-500/10 focus:border-green-500 transition-all resize-none leading-relaxed text-slate-700"
             />
-            <button
-              onClick={handleWhatsApp}
-              className="w-full bg-gradient-to-r from-[#25D366] to-[#1da851] hover:from-[#20bd5a] hover:to-[#199446] text-white py-3.5 rounded-xl flex justify-center items-center gap-2 font-bold shadow-md shadow-green-500/20 active:scale-95 transition-all"
-            >
-              <MessageCircle className="w-5 h-5" /> 发送 WhatsApp
-            </button>
+            <div className="flex gap-2">
+              {aiAvailable && (
+                <button
+                  type="button"
+                  onClick={handleAIGenerate}
+                  disabled={aiMessageLoading}
+                  className="px-4 py-3.5 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded-xl flex items-center gap-1.5 font-semibold transition-colors active:scale-95 disabled:opacity-50 text-sm"
+                >
+                  {aiMessageLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                  AI 写
+                </button>
+              )}
+              <button
+                onClick={handleWhatsApp}
+                className="flex-1 bg-gradient-to-r from-[#25D366] to-[#1da851] hover:from-[#20bd5a] hover:to-[#199446] text-white py-3.5 rounded-xl flex justify-center items-center gap-2 font-bold shadow-md shadow-green-500/20 active:scale-95 transition-all"
+              >
+                <MessageCircle className="w-5 h-5" /> 发送 WhatsApp
+              </button>
+            </div>
           </div>
         </div>
 
@@ -301,6 +408,19 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
                   <button onClick={() => removeLeadTag(lead.id, tag)} className="hover:text-blue-900 hover:bg-blue-200/50 rounded-full p-0.5 transition-colors">&times;</button>
                 </span>
               ))}
+
+              {/* AI suggested tags */}
+              {suggestedTags.map((tag) => (
+                <button
+                  key={`ai-${tag}`}
+                  type="button"
+                  onClick={() => handleAcceptTag(tag)}
+                  className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-700 border border-purple-200 border-dashed px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-purple-100 transition-colors"
+                >
+                  <Sparkles className="w-3 h-3" /> {tag}
+                </button>
+              ))}
+
               <div className="relative">
                 <button
                   onClick={() => setShowTagMenu(!showTagMenu)}
@@ -334,6 +454,19 @@ export function LeadDetail({ leadId, onBack }: LeadDetailProps) {
                   </div>
                 )}
               </div>
+
+              {/* AI Tags button */}
+              {aiAvailable && (
+                <button
+                  type="button"
+                  onClick={handleAITags}
+                  disabled={aiTagsLoading}
+                  className="inline-flex items-center gap-1 bg-purple-50 text-purple-600 border border-purple-200/60 px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-purple-100 transition-colors disabled:opacity-50"
+                >
+                  {aiTagsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  AI 建议
+                </button>
+              )}
             </div>
           </div>
         </div>
