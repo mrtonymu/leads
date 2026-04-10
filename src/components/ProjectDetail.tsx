@@ -136,7 +136,9 @@ export function ProjectDetail({ projectId, onBack }: Props) {
         if (file.type === 'application/pdf') {
           setBrochureStep(2);
           setBrochureProgress('正在解析 PDF...');
-          const images = await pdfToImages(file, 20);
+          const images = await pdfToImages(file, 5, (current, total) => {
+            setBrochureProgress(`正在解析第 ${current}/${total} 页...`);
+          });
           setBrochureStep(3);
           setBrochureProgress(`已解析 ${images.length} 页，AI 正在分析卖点...`);
           const points = await analyzeBrochureBatch(images);
@@ -358,7 +360,9 @@ export function ProjectDetail({ projectId, onBack }: Props) {
                     <span className="text-xs font-medium">{brochureProgress || 'AI 正在分析...'}</span>
                   </div>
                   <span className="text-xs text-slate-400">
-                    已用时 {formatElapsed(brochureElapsed)} · 预计约30秒
+                    已用时 {formatElapsed(brochureElapsed)}
+                    {brochureStep <= 2 && ' · 解析约5-10秒'}
+                    {brochureStep === 3 && ' · AI分析约15-30秒'}
                   </span>
                 </div>
               </div>

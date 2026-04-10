@@ -5,17 +5,24 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 /**
  * Convert a PDF file to an array of JPEG base64 strings (one per page).
- * Renders each page at 1.5x scale for good quality while keeping size reasonable.
+ * Renders at 1.0x scale with moderate quality — sufficient for AI text extraction
+ * while keeping file size small and rendering fast on mobile.
+ * @param onPageProgress optional callback reporting (currentPage, totalPages)
  */
-export async function pdfToImages(file: File, maxPages = 20): Promise<{ base64: string; mimeType: string }[]> {
+export async function pdfToImages(
+  file: File,
+  maxPages = 5,
+  onPageProgress?: (current: number, total: number) => void,
+): Promise<{ base64: string; mimeType: string }[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const numPages = Math.min(pdf.numPages, maxPages);
   const results: { base64: string; mimeType: string }[] = [];
 
   for (let i = 1; i <= numPages; i++) {
+    onPageProgress?.(i, numPages);
     const page = await pdf.getPage(i);
-    const viewport = page.getViewport({ scale: 1.5 });
+    const viewport = page.getViewport({ scale: 1.0 });
 
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
@@ -24,8 +31,7 @@ export async function pdfToImages(file: File, maxPages = 20): Promise<{ base64: 
 
     await page.render({ canvasContext: ctx, viewport, canvas } as never).promise;
 
-    // Convert to JPEG base64 (smaller than PNG)
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
     const base64 = dataUrl.split(',')[1];
     results.push({ base64, mimeType: 'image/jpeg' });
 
