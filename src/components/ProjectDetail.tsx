@@ -136,7 +136,7 @@ export function ProjectDetail({ projectId, onBack }: Props) {
         if (file.type === 'application/pdf') {
           setBrochureStep(2);
           setBrochureProgress('正在解析 PDF...');
-          const images = await pdfToImages(file, 20);
+          const images = await pdfToImages(file);
           setBrochureStep(3);
           setBrochureProgress(`已解析 ${images.length} 页，AI 正在分析卖点...`);
           const points = await analyzeBrochureBatch(images);
