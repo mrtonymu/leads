@@ -7,7 +7,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
  * Convert a PDF file to an array of JPEG base64 strings (one per page).
  * Renders each page at 1.5x scale for good quality while keeping size reasonable.
  */
-export async function pdfToImages(file: File, maxPages = 5): Promise<{ base64: string; mimeType: string }[]> {
+export async function pdfToImages(file: File, maxPages = 20): Promise<{ base64: string; mimeType: string }[]> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const numPages = Math.min(pdf.numPages, maxPages);

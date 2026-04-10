@@ -114,7 +114,7 @@ export function ProjectDetail({ projectId, onBack }: Props) {
       for (const file of Array.from(files) as File[]) {
         if (file.type === 'application/pdf') {
           // PDF: convert pages to images first, then analyze each
-          const images = await pdfToImages(file, 5);
+          const images = await pdfToImages(file, 20);
           for (const img of images) {
             const points = await analyzeBrochureBase64(img.base64, img.mimeType);
             allPoints.push(...points);
