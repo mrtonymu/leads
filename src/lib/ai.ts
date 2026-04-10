@@ -454,6 +454,18 @@ ${buildTimelineContext(timeline)}
 
 // ─── Feature 7: AI Brochure Analysis ───
 
+const BROCHURE_PROMPT = `分析这个房地产项目的 Sales Kit / Brochure，提取卖点。
+
+要求:
+- 用利他思维重新包装每个卖点（不讲产品多好，讲能帮客户解决什么）
+- 每个卖点一句话，简洁有力
+- 提取 5-8 个卖点
+- 用中文
+
+请严格按以下 JSON 格式返回，不要有任何多余文字:
+["卖点1", "卖点2", "卖点3"]`;
+
+/** Analyze a single image file */
 export async function analyzeBrochure(file: File): Promise<string[]> {
   if (!isAIConfigured()) throw new Error('Claude API key not configured');
 
@@ -466,18 +478,20 @@ export async function analyzeBrochure(file: File): Promise<string[]> {
   const base64 = btoa(binary);
   const mimeType = file.type || 'image/jpeg';
 
-  const prompt = `分析这个房地产项目的 Sales Kit / Brochure，提取卖点。
+  const result = await callClaudeWithImage(BROCHURE_PROMPT, base64, mimeType);
+  try {
+    const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return [result];
+  }
+}
 
-要求:
-- 用利他思维重新包装每个卖点（不讲产品多好，讲能帮客户解决什么）
-- 每个卖点一句话，简洁有力
-- 提取 5-8 个卖点
-- 用中文
+/** Analyze a pre-converted base64 image (from PDF conversion) */
+export async function analyzeBrochureBase64(base64: string, mimeType: string): Promise<string[]> {
+  if (!isAIConfigured()) throw new Error('Claude API key not configured');
 
-请严格按以下 JSON 格式返回，不要有任何多余文字:
-["卖点1", "卖点2", "卖点3"]`;
-
-  const result = await callClaudeWithImage(prompt, base64, mimeType);
+  const result = await callClaudeWithImage(BROCHURE_PROMPT, base64, mimeType);
   try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);

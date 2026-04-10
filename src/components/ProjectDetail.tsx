@@ -3,7 +3,8 @@ import { useCRMStore } from '../store';
 import { ArrowLeft, Plus, Edit2, Save, Trash2, X, ImagePlus, Loader2, Sparkles, FileUp } from 'lucide-react';
 import { DayType, DAY_TYPE_LABELS, DAY_TYPE_COLORS } from '../types';
 import { uploadProjectImage } from '../lib/db';
-import { isAIConfigured, analyzeBrochure } from '../lib/ai';
+import { isAIConfigured, analyzeBrochure, analyzeBrochureBase64 } from '../lib/ai';
+import { pdfToImages } from '../lib/pdf';
 
 const DAY_TYPES: DayType[] = ['day0', 'day1', 'day3', 'day7'];
 
@@ -105,25 +106,29 @@ export function ProjectDetail({ projectId, onBack }: Props) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // Validate all files are images
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    for (const file of Array.from(files) as File[]) {
-      if (!validTypes.includes(file.type)) {
-        alert(`不支持 ${file.type} 格式，请上传 JPG/PNG 图片。PDF 请先截图再上传。`);
-        return;
-      }
-    }
-
     setAiBrochureLoading(true);
     setAiBrochureResults([]);
     try {
-      // Analyze each image and merge results
       const allPoints: string[] = [];
+
       for (const file of Array.from(files) as File[]) {
-        const points = await analyzeBrochure(file);
-        allPoints.push(...points);
+        if (file.type === 'application/pdf') {
+          // PDF: convert pages to images first, then analyze each
+          const images = await pdfToImages(file, 5);
+          for (const img of images) {
+            const points = await analyzeBrochureBase64(img.base64, img.mimeType);
+            allPoints.push(...points);
+          }
+        } else {
+          // Image: analyze directly
+          const points = await analyzeBrochure(file);
+          allPoints.push(...points);
+        }
       }
-      setAiBrochureResults(allPoints);
+
+      // Deduplicate similar points
+      const unique = [...new Set(allPoints)];
+      setAiBrochureResults(unique);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : 'AI 分析失败，请稍后再试');
@@ -261,16 +266,16 @@ export function ProjectDetail({ projectId, onBack }: Props) {
                 <Sparkles className="w-5 h-5 text-purple-500" /> AI 分析卖点
               </h3>
             </div>
-            <p className="text-xs text-slate-500">上传 Brochure 图片，AI 自动提取卖点（支持 JPG/PNG，PDF 请先截图）</p>
+            <p className="text-xs text-slate-500">上传 Sales Kit / Brochure，支持 PDF 和图片</p>
 
             <input
               ref={brochureInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
+              accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
               multiple
               onChange={handleBrochureUpload}
               className="hidden"
-              aria-label="选择 Brochure 图片"
+              aria-label="选择 Brochure 文件"
             />
 
             {aiBrochureResults.length === 0 && !aiBrochureLoading && (
