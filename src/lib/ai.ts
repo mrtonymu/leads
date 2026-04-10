@@ -7,6 +7,59 @@ const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
 
 export const isAIConfigured = () => Boolean(apiKey);
 
+// ─── Usage Tracking ───
+
+// Sonnet 4 pricing (per million tokens)
+const INPUT_PRICE = 3.0;
+const OUTPUT_PRICE = 15.0;
+
+export interface AIUsage {
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedCostUSD: number;
+  lastResetDate: string;
+  history: Array<{ date: string; calls: number; inputTokens: number; outputTokens: number }>;
+}
+
+const USAGE_KEY = 'dignity-crm-ai-usage';
+
+export function getAIUsage(): AIUsage {
+  try {
+    const raw = localStorage.getItem(USAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, estimatedCostUSD: 0, lastResetDate: new Date().toISOString().split('T')[0], history: [] };
+}
+
+function trackUsage(inputTokens: number, outputTokens: number) {
+  const usage = getAIUsage();
+  const today = new Date().toISOString().split('T')[0];
+
+  usage.totalCalls += 1;
+  usage.totalInputTokens += inputTokens;
+  usage.totalOutputTokens += outputTokens;
+  usage.estimatedCostUSD += (inputTokens / 1_000_000) * INPUT_PRICE + (outputTokens / 1_000_000) * OUTPUT_PRICE;
+
+  // Track daily history
+  const todayEntry = usage.history.find((h) => h.date === today);
+  if (todayEntry) {
+    todayEntry.calls += 1;
+    todayEntry.inputTokens += inputTokens;
+    todayEntry.outputTokens += outputTokens;
+  } else {
+    usage.history.push({ date: today, calls: 1, inputTokens, outputTokens });
+    // Keep only last 30 days
+    if (usage.history.length > 30) usage.history.shift();
+  }
+
+  localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+}
+
+export function resetAIUsage() {
+  localStorage.removeItem(USAGE_KEY);
+}
+
 // ─── System Prompt ───
 
 const SYSTEM_PROMPT = `You are an AI assistant for a Malaysian real estate Advisor (not an agent/salesperson).
@@ -87,7 +140,11 @@ async function callClaude(userPrompt: string): Promise<string> {
       throw new Error(`AI 请求失败: ${msg}`);
     }
 
-    const data = await response.json() as { content: Array<{ type: string; text: string }> };
+    const data = await response.json() as {
+      content: Array<{ type: string; text: string }>;
+      usage?: { input_tokens: number; output_tokens: number };
+    };
+    if (data.usage) trackUsage(data.usage.input_tokens, data.usage.output_tokens);
     const text = data.content?.find((c) => c.type === 'text')?.text || '';
     return text.trim();
   } catch (err) {
@@ -131,7 +188,11 @@ async function callClaudeWithImage(userPrompt: string, imageBase64: string, mime
       throw new Error(`AI 请求失败: ${msg}`);
     }
 
-    const data = await response.json() as { content: Array<{ type: string; text: string }> };
+    const data = await response.json() as {
+      content: Array<{ type: string; text: string }>;
+      usage?: { input_tokens: number; output_tokens: number };
+    };
+    if (data.usage) trackUsage(data.usage.input_tokens, data.usage.output_tokens);
     const text = data.content?.find((c) => c.type === 'text')?.text || '';
     return text.trim();
   } catch (err) {

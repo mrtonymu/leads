@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useCRMStore } from '../store';
-import { Save, MessageSquare, Edit2, Download, Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Save, MessageSquare, Edit2, Download, Upload, Loader2, CheckCircle, AlertCircle, Sparkles, RotateCcw } from 'lucide-react';
 import { importFromV1Export } from '../lib/db';
+import { isAIConfigured, getAIUsage, resetAIUsage } from '../lib/ai';
 
 type ImportStatus = 'idle' | 'previewing' | 'importing' | 'success' | 'error';
 
@@ -122,6 +123,72 @@ export function Settings() {
         <h2 className="text-2xl font-bold text-slate-900 tracking-tight">系统设置</h2>
         <p className="text-slate-500 text-sm mt-0.5">定制你的专属跟进话术</p>
       </div>
+
+      {/* AI Usage */}
+      {isAIConfigured() && (() => {
+        const usage = getAIUsage();
+        return (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100/80 overflow-hidden">
+            <div className="p-5 bg-gradient-to-br from-purple-50 to-indigo-50 border-b border-purple-100/50">
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-purple-900 flex items-center gap-2 text-lg">
+                  <Sparkles className="w-5 h-5 text-purple-600" />
+                  AI 用量
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('确定清零用量记录？')) {
+                      resetAIUsage();
+                      window.location.reload();
+                    }
+                  }}
+                  className="text-xs text-purple-500 hover:text-purple-700 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-purple-100 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" /> 清零
+                </button>
+              </div>
+              <p className="text-xs text-purple-700/80 mt-2 font-medium">
+                模型: Claude Sonnet 4 · 实际余额请查看 <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener" className="underline">Anthropic 控制台</a>
+              </p>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-purple-50/50 rounded-2xl p-3 text-center">
+                  <p className="text-2xl font-black text-purple-900">{usage.totalCalls}</p>
+                  <p className="text-[11px] text-purple-600 font-semibold mt-1">总调用次数</p>
+                </div>
+                <div className="bg-purple-50/50 rounded-2xl p-3 text-center">
+                  <p className="text-2xl font-black text-purple-900">${usage.estimatedCostUSD.toFixed(3)}</p>
+                  <p className="text-[11px] text-purple-600 font-semibold mt-1">估算花费</p>
+                </div>
+                <div className="bg-purple-50/50 rounded-2xl p-3 text-center">
+                  <p className="text-lg font-bold text-purple-800">{(usage.totalInputTokens / 1000).toFixed(1)}K</p>
+                  <p className="text-[11px] text-purple-600 font-semibold mt-1">输入 Tokens</p>
+                </div>
+                <div className="bg-purple-50/50 rounded-2xl p-3 text-center">
+                  <p className="text-lg font-bold text-purple-800">{(usage.totalOutputTokens / 1000).toFixed(1)}K</p>
+                  <p className="text-[11px] text-purple-600 font-semibold mt-1">输出 Tokens</p>
+                </div>
+              </div>
+
+              {usage.history.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-2">最近 7 天</p>
+                  <div className="space-y-1.5">
+                    {usage.history.slice(-7).reverse().map((h) => (
+                      <div key={h.date} className="flex justify-between items-center text-xs">
+                        <span className="text-slate-500 font-mono">{h.date}</span>
+                        <span className="text-slate-700 font-semibold">{h.calls} 次 · {((h.inputTokens + h.outputTokens) / 1000).toFixed(1)}K tokens</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Data Export */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100/80 overflow-hidden">
