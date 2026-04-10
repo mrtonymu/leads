@@ -202,6 +202,56 @@ async function callClaudeWithImage(userPrompt: string, imageBase64: string, mime
   }
 }
 
+/** Call Claude with multiple images in a single request */
+async function callClaudeWithImages(
+  userPrompt: string,
+  images: Array<{ base64: string; mimeType: string }>,
+): Promise<string> {
+  if (!isAIConfigured()) throw new Error('Claude API key not configured');
+
+  const content: Array<{ type: string; source?: { type: string; media_type: string; data: string }; text?: string }> = [];
+  for (const img of images) {
+    content.push({ type: 'image', source: { type: 'base64', media_type: img.mimeType, data: img.base64 } });
+  }
+  content.push({ type: 'text', text: userPrompt });
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = (err as Record<string, Record<string, string>>)?.error?.message || response.statusText;
+      throw new Error(`AI 请求失败: ${msg}`);
+    }
+
+    const data = await response.json() as {
+      content: Array<{ type: string; text: string }>;
+      usage?: { input_tokens: number; output_tokens: number };
+    };
+    if (data.usage) trackUsage(data.usage.input_tokens, data.usage.output_tokens);
+    const text = data.content?.find((c) => c.type === 'text')?.text || '';
+    return text.trim();
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('AI')) throw err;
+    console.error('Claude API error:', err);
+    throw new Error('AI 请求失败，请稍后再试');
+  }
+}
+
 // ─── Context Builders ───
 
 function buildLeadContext(lead: Lead, event?: { name: string } | null, project?: Project | null): string {
@@ -492,6 +542,19 @@ export async function analyzeBrochureBase64(base64: string, mimeType: string): P
   if (!isAIConfigured()) throw new Error('Claude API key not configured');
 
   const result = await callClaudeWithImage(BROCHURE_PROMPT, base64, mimeType);
+  try {
+    const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return [result];
+  }
+}
+
+/** Analyze multiple images (e.g. PDF pages) in a single API call */
+export async function analyzeBrochureBatch(images: Array<{ base64: string; mimeType: string }>): Promise<string[]> {
+  if (!isAIConfigured()) throw new Error('Claude API key not configured');
+
+  const result = await callClaudeWithImages(BROCHURE_PROMPT, images);
   try {
     const cleaned = result.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);

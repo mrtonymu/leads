@@ -3,7 +3,7 @@ import { useCRMStore } from '../store';
 import { ArrowLeft, Plus, Edit2, Save, Trash2, X, ImagePlus, Loader2, Sparkles, FileUp } from 'lucide-react';
 import { DayType, DAY_TYPE_LABELS, DAY_TYPE_COLORS } from '../types';
 import { uploadProjectImage } from '../lib/db';
-import { isAIConfigured, analyzeBrochure, analyzeBrochureBase64 } from '../lib/ai';
+import { isAIConfigured, analyzeBrochure, analyzeBrochureBatch } from '../lib/ai';
 import { pdfToImages } from '../lib/pdf';
 
 const DAY_TYPES: DayType[] = ['day0', 'day1', 'day3', 'day7'];
@@ -37,6 +37,7 @@ export function ProjectDetail({ projectId, onBack }: Props) {
   // AI Brochure
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const [aiBrochureLoading, setAiBrochureLoading] = useState(false);
+  const [brochureProgress, setBrochureProgress] = useState('');
   const [aiBrochureResults, setAiBrochureResults] = useState<string[]>([]);
 
   if (!project) return null;
@@ -108,19 +109,21 @@ export function ProjectDetail({ projectId, onBack }: Props) {
 
     setAiBrochureLoading(true);
     setAiBrochureResults([]);
+    setBrochureProgress('准备中...');
     try {
       const allPoints: string[] = [];
 
       for (const file of Array.from(files) as File[]) {
         if (file.type === 'application/pdf') {
-          // PDF: convert pages to images first, then analyze each
+          // PDF: convert all pages to images, then analyze in one batch call
+          setBrochureProgress('正在解析 PDF...');
           const images = await pdfToImages(file, 20);
-          for (const img of images) {
-            const points = await analyzeBrochureBase64(img.base64, img.mimeType);
-            allPoints.push(...points);
-          }
+          setBrochureProgress(`已解析 ${images.length} 页，AI 正在分析...`);
+          const points = await analyzeBrochureBatch(images);
+          allPoints.push(...points);
         } else {
           // Image: analyze directly
+          setBrochureProgress('AI 正在分析图片...');
           const points = await analyzeBrochure(file);
           allPoints.push(...points);
         }
@@ -134,6 +137,7 @@ export function ProjectDetail({ projectId, onBack }: Props) {
       alert(err instanceof Error ? err.message : 'AI 分析失败，请稍后再试');
     } finally {
       setAiBrochureLoading(false);
+      setBrochureProgress('');
       if (brochureInputRef.current) brochureInputRef.current.value = '';
     }
   };
@@ -291,7 +295,7 @@ export function ProjectDetail({ projectId, onBack }: Props) {
             {aiBrochureLoading && (
               <div className="flex items-center justify-center gap-2 py-4 text-purple-600">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="font-semibold text-sm">AI 正在分析...</span>
+                <span className="font-semibold text-sm">{brochureProgress || 'AI 正在分析...'}</span>
               </div>
             )}
 

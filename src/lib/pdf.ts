@@ -28,6 +28,10 @@ export async function pdfToImages(file: File, maxPages = 20): Promise<{ base64: 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
     const base64 = dataUrl.split(',')[1];
     results.push({ base64, mimeType: 'image/jpeg' });
+
+    // Clean up canvas to free memory
+    canvas.width = 0;
+    canvas.height = 0;
   }
 
   return results;
