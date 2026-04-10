@@ -11,7 +11,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
  */
 export async function pdfToImages(
   file: File,
-  maxPages = 5,
+  maxPages = 20,
   onPageProgress?: (current: number, total: number) => void,
 ): Promise<{ base64: string; mimeType: string }[]> {
   const arrayBuffer = await file.arrayBuffer();
