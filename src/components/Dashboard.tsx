@@ -67,7 +67,8 @@ export function Dashboard() {
       aiLoadedRef.current = true;
       loadAI();
     }
-  }, [allTodayLeads.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTodayLeads.length, timeline.length, projects.length]);
 
   const getSuggestionForLead = (leadId: string) =>
     followUpSuggestions.find((s) => s.leadId === leadId)?.suggestion;

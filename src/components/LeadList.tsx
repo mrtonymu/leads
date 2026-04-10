@@ -41,7 +41,8 @@ export function LeadList() {
       aiLoadedRef.current = true;
       analyzeIntent(leads, timeline).then(setIntents).catch(console.error);
     }
-  }, [leads.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leads.length, timeline.length]);
 
   const getIntent = (leadId: string) => intents.find((i) => i.leadId === leadId);
 
