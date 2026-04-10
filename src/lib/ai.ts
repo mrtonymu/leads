@@ -73,7 +73,7 @@ async function callClaude(userPrompt: string): Promise<string> {
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
@@ -112,7 +112,7 @@ async function callClaudeWithImage(userPrompt: string, imageBase64: string, mime
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: [{
