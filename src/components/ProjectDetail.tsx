@@ -102,16 +102,31 @@ export function ProjectDetail({ projectId, onBack }: Props) {
   };
 
   const handleBrochureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // Validate all files are images
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    for (const file of Array.from(files) as File[]) {
+      if (!validTypes.includes(file.type)) {
+        alert(`不支持 ${file.type} 格式，请上传 JPG/PNG 图片。PDF 请先截图再上传。`);
+        return;
+      }
+    }
+
     setAiBrochureLoading(true);
     setAiBrochureResults([]);
     try {
-      const points = await analyzeBrochure(file);
-      setAiBrochureResults(points);
+      // Analyze each image and merge results
+      const allPoints: string[] = [];
+      for (const file of Array.from(files) as File[]) {
+        const points = await analyzeBrochure(file);
+        allPoints.push(...points);
+      }
+      setAiBrochureResults(allPoints);
     } catch (err) {
       console.error(err);
-      alert('AI 分析失败，请稍后再试');
+      alert(err instanceof Error ? err.message : 'AI 分析失败，请稍后再试');
     } finally {
       setAiBrochureLoading(false);
       if (brochureInputRef.current) brochureInputRef.current.value = '';
@@ -246,15 +261,16 @@ export function ProjectDetail({ projectId, onBack }: Props) {
                 <Sparkles className="w-5 h-5 text-purple-500" /> AI 分析卖点
               </h3>
             </div>
-            <p className="text-xs text-slate-500">上传 Sales Kit / Brochure，AI 自动提取卖点</p>
+            <p className="text-xs text-slate-500">上传 Brochure 图片，AI 自动提取卖点（支持 JPG/PNG，PDF 请先截图）</p>
 
             <input
               ref={brochureInputRef}
               type="file"
-              accept="image/*,.pdf"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              multiple
               onChange={handleBrochureUpload}
               className="hidden"
-              aria-label="选择 Brochure 文件"
+              aria-label="选择 Brochure 图片"
             />
 
             {aiBrochureResults.length === 0 && !aiBrochureLoading && (
